@@ -67,10 +67,10 @@ async def guardar_noticia(update: Update, context: ContextTypes.DEFAULT_TYPE):
         url = match.group()
         try:
             texto_a_guardar = await procesar_url(url)
-        except Exception:
+        except Exception as e:
             noticias.append({"texto": url, "fecha": datetime.now().isoformat()})
             guardar_noticias(noticias)
-            await update.message.reply_text("⚠️ No pude procesar el link, guardé la URL directamente")
+            await update.message.reply_text(f"⚠️ No pude procesar el link, guardé la URL directamente. Error: {e}")
             return
     else:
         texto_a_guardar = texto
