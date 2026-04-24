@@ -54,6 +54,7 @@ async def guardar_noticia(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def resumen(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🔍 Debug: versión actual cargada correctamente")
     noticias = cargar_noticias()
     semana = noticias_esta_semana(noticias)
 
