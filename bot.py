@@ -76,7 +76,11 @@ async def limpiar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def digest(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await enviar_digest(context.application)
+    await update.message.reply_text("⏳ Procesando digest...")
+    try:
+        await enviar_digest(context.application)
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error llamando a enviar_digest: {e}")
 
 
 async def on_startup(app):
