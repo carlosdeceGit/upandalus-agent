@@ -43,11 +43,7 @@ def noticias_esta_semana(noticias):
     desde = inicio_de_semana()
     return [n for n in noticias if datetime.fromisoformat(n["fecha"]) >= desde]
 
-async def procesar_url(url: str) -> str:
-    async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
-        resp = await client.get(url)
-        resp.raise_for_status()
-        contenido = resp.text[:15000]
+async def resumir_con_claude(contenido: str) -> str:
     ai = anthropic.AsyncAnthropic()
     msg = await ai.messages.create(
         model="claude-sonnet-4-6",
@@ -58,6 +54,13 @@ async def procesar_url(url: str) -> str:
     return msg.content[0].text
 
 
+async def fetch_url(url: str) -> str:
+    async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+        resp = await client.get(url)
+        resp.raise_for_status()
+        return resp.text[:15000]
+
+
 async def guardar_noticia(update: Update, context: ContextTypes.DEFAULT_TYPE):
     texto = update.message.text
     noticias = cargar_noticias()
@@ -65,13 +68,27 @@ async def guardar_noticia(update: Update, context: ContextTypes.DEFAULT_TYPE):
     match = URL_RE.search(texto)
     if match:
         url = match.group()
-        try:
-            texto_a_guardar = await procesar_url(url)
-        except Exception as e:
-            noticias.append({"texto": url, "fecha": datetime.now().isoformat()})
-            guardar_noticias(noticias)
-            await update.message.reply_text(f"⚠️ No pude procesar el link, guardé la URL directamente. Error: {e}")
-            return
+        texto_sin_url = texto.replace(url, "").strip()
+
+        if texto_sin_url:
+            # URL + texto: usa el texto como contenido para Claude
+            try:
+                texto_a_guardar = await resumir_con_claude(texto_sin_url)
+            except Exception as e:
+                noticias.append({"texto": texto_sin_url, "fecha": datetime.now().isoformat()})
+                guardar_noticias(noticias)
+                await update.message.reply_text(f"⚠️ No pude generar el resumen, guardé el texto directamente. Error: {e}")
+                return
+        else:
+            # Solo URL: intenta fetch
+            try:
+                contenido = await fetch_url(url)
+                texto_a_guardar = await resumir_con_claude(contenido)
+            except Exception:
+                await update.message.reply_text(
+                    "🔗 No puedo leer ese medio directamente. Pega el texto de la noticia junto a la URL y lo proceso."
+                )
+                return
     else:
         texto_a_guardar = texto
 
