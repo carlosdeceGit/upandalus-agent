@@ -45,11 +45,14 @@ def construir_mensaje(noticias):
 
 async def enviar_digest(app):
     chat_id = os.environ["TELEGRAM_CHAT_ID"]
-    noticias = cargar_noticias()
-    mensaje = construir_mensaje(noticias)
-    await app.bot.send_message(chat_id=chat_id, text=mensaje)
-    if noticias:
-        guardar_noticias([])
+    try:
+        noticias = cargar_noticias()
+        mensaje = construir_mensaje(noticias)
+        await app.bot.send_message(chat_id=chat_id, text=mensaje)
+        if noticias:
+            guardar_noticias([])
+    except Exception as e:
+        await app.bot.send_message(chat_id=chat_id, text=f"❌ Error en digest: {e}")
 
 
 def configurar_scheduler(app):
