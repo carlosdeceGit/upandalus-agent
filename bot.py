@@ -65,7 +65,17 @@ def main():
     app.add_handler(CommandHandler("digest", digest))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, guardar_noticia))
     print("Bot v2 iniciado.")
-    app.run_polling(drop_pending_updates=True)
+
+    port = int(os.environ.get("PORT", 8080))
+    railway_url = os.environ["RAILWAY_STATIC_URL"]
+
+    app.run_webhook(
+        listen="0.0.0.0",
+        port=port,
+        url_path="webhook",
+        webhook_url=f"https://{railway_url}/webhook",
+        drop_pending_updates=True,
+    )
 
 if __name__ == "__main__":
     main()
