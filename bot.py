@@ -97,6 +97,7 @@ def main():
     app.add_handler(CommandHandler("digest", digest))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, guardar_noticia))
 
+    print("BOT VERSION 2 - handlers: resumen, limpiar, digest, guardar")
     print("Bot iniciado.")
     app.run_polling(drop_pending_updates=True)
 
