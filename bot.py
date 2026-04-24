@@ -3,7 +3,7 @@ import os
 from datetime import datetime, timedelta
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
-from weekly_digest import configurar_scheduler
+from weekly_digest import configurar_scheduler, enviar_digest
 
 NOTICIAS_FILE = "noticias.json"
 
@@ -75,6 +75,10 @@ async def limpiar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🗑️ Lista limpiada. Nueva semana, nueva lista.")
 
 
+async def digest(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await enviar_digest(context.application)
+
+
 async def on_startup(app):
     scheduler = configurar_scheduler(app)
     scheduler.start()
@@ -86,6 +90,7 @@ def main():
 
     app.add_handler(CommandHandler("resumen", resumen))
     app.add_handler(CommandHandler("limpiar", limpiar))
+    app.add_handler(CommandHandler("digest", digest))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, guardar_noticia))
 
     print("Bot iniciado.")
