@@ -2,5 +2,7 @@
 noticias.json
 cracks_transcripcion.txt
 output_*.json
+carrusel_*.pdf
+assets/logo_temp.png
 __pycache__/
 *.pyc

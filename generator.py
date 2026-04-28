@@ -1,14 +1,27 @@
 import asyncio
 import json
 import os
+import re
 from datetime import date
 
 import anthropic
+import cairosvg
 import httpx
+from reportlab.lib.colors import HexColor, white
+from reportlab.lib.utils import ImageReader
+from reportlab.pdfbase.pdfmetrics import stringWidth
+from reportlab.pdfgen import canvas as rl_canvas
 
 NOTICIAS_FILE = "noticias.json"
 PUBLICADAS_FILE = "noticias_publicadas.json"
 CRACKS_FILE = "cracks_transcripcion.txt"
+LOGO_SVG = "assets/LogoSVG.svg"
+LOGO_PNG = "assets/logo_temp.png"
+
+_PAGE_W, _PAGE_H = 1080, 1080
+_HEADER_H = 80
+_HEADER_COLOR = HexColor("#15944f")
+_BODY_MARGIN = 60
 
 BRAVE_QUERIES = [
     "startups España inversión ronda",
@@ -51,6 +64,103 @@ TÍTULOS NEWSLETTER:
 
 Responde en este formato JSON exacto:
 {"newsletter": "...", "linkedin": "...", "carrusel": "...", "titulos": "..."}"""
+
+
+def _parsear_carrusel(texto: str) -> list:
+    """Devuelve lista de {'titulo': str, 'slides': [str]}."""
+    ideas = []
+    bloques = re.split(r'\*{0,2}IDEA\s+\d+\s*[:\-]?\s*\*{0,2}', texto, flags=re.IGNORECASE)
+    for bloque in bloques[1:]:
+        lineas = [l.strip() for l in bloque.strip().split('\n') if l.strip()]
+        if not lineas:
+            continue
+        titulo = lineas[0].strip('*').strip()
+        slides = []
+        partes = re.split(r'\*{0,2}Slide\s+\d+\s*[:\-]?\s*\*{0,2}', bloque, flags=re.IGNORECASE)
+        for parte in partes[1:]:
+            texto_slide = parte.strip().split('\n')[0].strip('*').strip()
+            if texto_slide:
+                slides.append(texto_slide)
+        if slides:
+            ideas.append({"titulo": titulo, "slides": slides})
+    return ideas
+
+
+def _wrap(text: str, font: str, size: float, max_w: float) -> list:
+    words = text.split()
+    lines, current = [], []
+    for word in words:
+        test = ' '.join(current + [word])
+        if stringWidth(test, font, size) <= max_w:
+            current.append(word)
+        else:
+            if current:
+                lines.append(' '.join(current))
+            current = [word]
+    if current:
+        lines.append(' '.join(current))
+    return lines
+
+
+def _dibujar_slide(c, texto: str, num: int, total: int):
+    # Fondo blanco
+    c.setFillColorRGB(1, 1, 1)
+    c.rect(0, 0, _PAGE_W, _PAGE_H, fill=1, stroke=0)
+
+    # Franja superior verde
+    c.setFillColor(_HEADER_COLOR)
+    c.rect(0, _PAGE_H - _HEADER_H, _PAGE_W, _HEADER_H, fill=1, stroke=0)
+
+    # Logo (izquierda, centrado verticalmente en la franja)
+    if os.path.exists(LOGO_PNG):
+        logo = ImageReader(LOGO_PNG)
+        lw, lh = logo.getSize()
+        escala = (_HEADER_H - 20) / lh
+        dw, dh = lw * escala, lh * escala
+        logo_y = _PAGE_H - _HEADER_H + (_HEADER_H - dh) / 2
+        c.drawImage(logo, 30, logo_y, width=dw, height=dh, mask='auto')
+
+    # Número de slide (derecha, blanco)
+    c.setFillColor(white)
+    c.setFont("Helvetica-Bold", 20)
+    label = f"{num}/{total}"
+    c.drawRightString(_PAGE_W - 30, _PAGE_H - _HEADER_H / 2 - 10, label)
+
+    # Texto del cuerpo
+    font, font_size = "Helvetica", 38
+    max_w = _PAGE_W - 2 * _BODY_MARGIN
+    lines = _wrap(texto, font, font_size, max_w)
+    line_h = font_size * 1.35
+    body_top = _PAGE_H - _HEADER_H - _BODY_MARGIN
+    body_bottom = _BODY_MARGIN
+    block_h = len(lines) * line_h
+    y = body_top - (body_top - body_bottom - block_h) / 2
+
+    c.setFillColorRGB(0.1, 0.1, 0.1)
+    c.setFont(font, font_size)
+    for line in lines:
+        c.drawString(_BODY_MARGIN, y, line)
+        y -= line_h
+
+
+def generar_pdf_carrusel(carrusel_texto: str, output_path: str = None) -> str:
+    if output_path is None:
+        output_path = f"carrusel_{date.today().isoformat()}.pdf"
+
+    cairosvg.svg2png(url=LOGO_SVG, write_to=LOGO_PNG, output_width=200)
+
+    ideas = _parsear_carrusel(carrusel_texto)
+    c = rl_canvas.Canvas(output_path, pagesize=(_PAGE_W, _PAGE_H))
+
+    for idea in ideas:
+        slides = idea["slides"]
+        total = len(slides)
+        for i, texto_slide in enumerate(slides, 1):
+            _dibujar_slide(c, texto_slide, i, total)
+            c.showPage()
+
+    c.save()
+    return output_path
 
 
 def _cargar_json(path: str, default):
@@ -192,6 +302,13 @@ async def run():
 
     # Paso 3a: guardar output con fecha
     _guardar_json(f"output_{date.today().isoformat()}.json", output)
+
+    # Generar PDF del carrusel si existe el logo
+    if os.path.exists(LOGO_SVG):
+        try:
+            generar_pdf_carrusel(output.get("carrusel", ""))
+        except Exception as e:
+            print(f"Aviso: no se pudo generar el PDF del carrusel: {e}")
 
     # Paso 3b: actualizar histórico de publicadas
     nuevas_urls = [n["url"] for n in noticias_brave if n.get("url")]
