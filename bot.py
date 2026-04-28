@@ -48,7 +48,7 @@ def noticias_esta_semana(noticias):
 async def resumir_con_claude(contenido: str) -> str:
     ai = anthropic.AsyncAnthropic()
     msg = await ai.messages.create(
-        model="claude-sonnet-4-6",
+        model="claude-sonnet-4-5",
         max_tokens=1024,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": contenido}],
