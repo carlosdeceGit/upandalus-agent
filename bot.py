@@ -8,6 +8,8 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from weekly_digest import configurar_scheduler, enviar_digest
 
+from generator import run as run_generator
+
 NOTICIAS_FILE = "noticias.json"
 URL_RE = re.compile(r'https?://\S+')
 SYSTEM_PROMPT = (
@@ -120,12 +122,21 @@ async def on_startup(app):
     scheduler = configurar_scheduler(app)
     scheduler.start()
 
+async def generar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("⏳ Generando contenido... Esto puede tardar un minuto.")
+    try:
+        await run_generator()
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {e}")
+
+
 def main():
     token = os.environ["TELEGRAM_TOKEN"]
     app = ApplicationBuilder().token(token).post_init(on_startup).build()
     app.add_handler(CommandHandler("resumen", resumen))
     app.add_handler(CommandHandler("limpiar", limpiar))
     app.add_handler(CommandHandler("digest", digest))
+    app.add_handler(CommandHandler("generar", generar))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, guardar_noticia))
     print("Bot v2 iniciado.")
 

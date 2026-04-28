@@ -1,4 +1,6 @@
 .env
 noticias.json
+cracks_transcripcion.txt
+output_*.json
 __pycache__/
 *.pyc

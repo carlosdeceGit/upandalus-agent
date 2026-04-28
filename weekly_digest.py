@@ -5,6 +5,8 @@ from datetime import datetime
 import pytz
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
+from generator import run as generar
+
 NOTICIAS_FILE = "noticias.json"
 MADRID_TZ = pytz.timezone("Europe/Madrid")
 
@@ -64,5 +66,13 @@ def configurar_scheduler(app):
         hour=11,
         minute=0,
         args=[app],
+    )
+    scheduler.add_job(
+        generar,
+        trigger="cron",
+        day_of_week="sun",
+        hour=11,
+        minute=0,
+        id="generar_contenido_semanal",
     )
     return scheduler
