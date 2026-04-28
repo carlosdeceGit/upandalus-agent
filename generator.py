@@ -5,8 +5,8 @@ import re
 from datetime import date
 
 import anthropic
-import cairosvg
 import httpx
+from PIL import Image, ImageDraw, ImageFont
 from reportlab.lib.colors import HexColor, white
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase.pdfmetrics import stringWidth
@@ -15,7 +15,6 @@ from reportlab.pdfgen import canvas as rl_canvas
 NOTICIAS_FILE = "noticias.json"
 PUBLICADAS_FILE = "noticias_publicadas.json"
 CRACKS_FILE = "cracks_transcripcion.txt"
-LOGO_SVG = "assets/LogoSVG.svg"
 LOGO_PNG = "assets/logo_temp.png"
 
 _PAGE_W, _PAGE_H = 1080, 1080
@@ -143,11 +142,34 @@ def _dibujar_slide(c, texto: str, num: int, total: int):
         y -= line_h
 
 
+def _generar_logo_png():
+    """Crea logo_temp.png con el texto 'UpAndalus' en verde sobre fondo transparente."""
+    font_size = 42
+    try:
+        font = ImageFont.truetype("Helvetica Bold.ttf", font_size)
+    except OSError:
+        try:
+            font = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf", font_size)
+        except OSError:
+            font = ImageFont.load_default()
+
+    dummy = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+    bbox = dummy.textbbox((0, 0), "UpAndalus", font=font)
+    w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+
+    img = Image.new("RGBA", (w + 8, h + 8), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    draw.text((4, 4), "UpAndalus", font=font, fill="#15944f")
+
+    os.makedirs("assets", exist_ok=True)
+    img.save(LOGO_PNG)
+
+
 def generar_pdf_carrusel(carrusel_texto: str, output_path: str = None) -> str:
     if output_path is None:
         output_path = f"carrusel_{date.today().isoformat()}.pdf"
 
-    cairosvg.svg2png(url=LOGO_SVG, write_to=LOGO_PNG, output_width=200)
+    _generar_logo_png()
 
     ideas = _parsear_carrusel(carrusel_texto)
     c = rl_canvas.Canvas(output_path, pagesize=(_PAGE_W, _PAGE_H))
@@ -303,12 +325,11 @@ async def run():
     # Paso 3a: guardar output con fecha
     _guardar_json(f"output_{date.today().isoformat()}.json", output)
 
-    # Generar PDF del carrusel si existe el logo
-    if os.path.exists(LOGO_SVG):
-        try:
-            generar_pdf_carrusel(output.get("carrusel", ""))
-        except Exception as e:
-            print(f"Aviso: no se pudo generar el PDF del carrusel: {e}")
+    # Generar PDF del carrusel
+    try:
+        generar_pdf_carrusel(output.get("carrusel", ""))
+    except Exception as e:
+        print(f"Aviso: no se pudo generar el PDF del carrusel: {e}")
 
     # Paso 3b: actualizar histórico de publicadas
     nuevas_urls = [n["url"] for n in noticias_brave if n.get("url")]
