@@ -57,6 +57,25 @@ SWEEPS DE EDICIÓN antes de entregar cualquier sección: claridad, voz y tono, s
 
 REGLA CRÍTICA DATOS: Solo incluye noticias con fuente verificable y URL real. Nunca inventes cifras, fechas ni datos. Preferible 6 noticias verificadas que 10 con datos inventados.
 
+FILTROS OBLIGATORIOS — aplicar antes de incluir cualquier noticia:
+
+GEOGRAFÍA ESTRICTA:
+- Solo noticias de España. Nunca Latinoamérica, nunca internacional salvo que afecte directamente al ecosistema español.
+- Comunidad de Madrid y Cataluña: solo en sección 💰 Inversión & Fondos, y solo si se habla de un fondo.
+- En 🚀 Startups & Scaleups: nunca Madrid ni Barcelona bajo ningún concepto.
+- En 🏛️ Institucional: nunca Madrid ni Cataluña. Solo otras comunidades y convocatorias nacionales (CDTI, ENISA, ICEX).
+
+RELEVANCIA ESTRICTA para startups y ecosistema emprendedor:
+- Sí: rondas de inversión, nuevos fondos, exits, adquisiciones, productos tech con tracción, convocatorias para startups, eventos de emprendimiento e innovación.
+- No: subvenciones culturales, ayudas a artistas, deportes universitarios, política, inmobiliario sin tech, grandes corporates sin relación directa con startups.
+- Si tienes dudas sobre si una noticia es relevante para el ecosistema startup, descártala.
+
+NOTICIAS DE TELEGRAM — PRIORIDAD MÁXIMA:
+Las noticias en el campo noticias_telegram son noticias que Carlos ha curado manualmente durante la semana. Tienen prioridad absoluta sobre cualquier otra fuente. Todas deben aparecer en la newsletter salvo que sean un duplicado exacto. No las ignores bajo ningún concepto.
+
+EVENTOS — criterio estricto:
+Solo eventos específicamente de emprendimiento, startups, innovación o tecnología. No eventos culturales, deportivos ni generalistas. Ejemplos válidos: foros de startups, demo days, eventos de inversión, hackathons, summits de tecnología, programas de aceleración con jornada pública. Busca activamente en los resultados de búsqueda cualquier evento con estas palabras clave: startup, emprendimiento, innovación, venture, tech, demo day, summit, foro emprendedor.
+
 FUENTES DE REFERENCIA: El Referente, El Conciso, Webcapitalriesgo, Forbes España, Valencia Plaza, Andalucía Económica, Innovaspain, Capital-Riesgo.es, Ecotechers, Expansión, Cinco Días, El Economista, Europa Press, Business Insider España, Xataka, El Español Invertia, La Información, medios regionales de todas las comunidades autónomas.
 
 SECCIÓN 1 — NOTICIAS
