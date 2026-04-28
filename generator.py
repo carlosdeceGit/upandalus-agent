@@ -285,6 +285,43 @@ async def _enviar_telegram(token: str, chat_id: str, titulo: str, texto: str):
             )
 
 
+async def leer_gmail_alerts():
+    credentials_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
+    if not credentials_json:
+        print("AVISO: GOOGLE_CREDENTIALS_JSON no configurado, saltando Gmail")
+        return []
+    try:
+        from google.oauth2 import service_account
+        from googleapiclient.discovery import build
+        import base64
+        from datetime import datetime, timedelta
+        credentials_info = json.loads(credentials_json)
+        credentials = service_account.Credentials.from_service_account_info(
+            credentials_info,
+            scopes=["https://www.googleapis.com/auth/gmail.readonly"]
+        )
+        service = build("gmail", "v1", credentials=credentials)
+        hace_7_dias = int((datetime.now() - timedelta(days=7)).timestamp())
+        query = f'subject:"Alerta de Google" after:{hace_7_dias}'
+        results = service.users().messages().list(userId="me", q=query, maxResults=50).execute()
+        messages = results.get("messages", [])
+        textos = []
+        for msg in messages:
+            full = service.users().messages().get(userId="me", id=msg["id"], format="full").execute()
+            payload = full.get("payload", {})
+            parts = payload.get("parts", [payload])
+            for part in parts:
+                if part.get("mimeType") == "text/plain":
+                    data = part.get("body", {}).get("data", "")
+                    if data:
+                        texto = base64.urlsafe_b64decode(data).decode("utf-8", errors="ignore")
+                        textos.append(texto)
+        return textos
+    except Exception as e:
+        print(f"Error leyendo Gmail: {e}")
+        return []
+
+
 async def run():
     token = os.environ["TELEGRAM_BOT_TOKEN"]
     chat_id = os.environ["TELEGRAM_CHAT_ID"]
