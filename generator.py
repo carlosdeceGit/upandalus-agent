@@ -79,7 +79,7 @@ Solo eventos específicamente de emprendimiento, startups, innovación o tecnolo
 FUENTES DE REFERENCIA: El Referente, El Conciso, Webcapitalriesgo, Forbes España, Valencia Plaza, Andalucía Económica, Innovaspain, Capital-Riesgo.es, Ecotechers, Expansión, Cinco Días, El Economista, Europa Press, Business Insider España, Xataka, El Español Invertia, La Información, medios regionales de todas las comunidades autónomas.
 
 SECCIÓN 1 — NOTICIAS
-Fuentes: noticias_telegram + noticias_buscadas + emails_gmail. Deduplica contra histórico.
+Fuentes: noticias_telegram (prioridad máxima) + noticias_buscadas + emails_gmail.
 Criterios: ronda de inversión, nuevo fondo, nuevo producto relevante, subvenciones, impacto real en ecosistema (exits, quiebras, alianzas, regulación).
 Descartar: repeticiones, grandes corporates sin relación con startups, opinión sin hecho noticiable.
 Formato: párrafo 2-4 líneas. Qué pasó + quién + cuánto + para qué. Negritas para empresa, cifras, inversores. Cifras: 450k, 20M€. Cierre: [[Nombre medio]](url).
@@ -91,12 +91,14 @@ Subsecciones:
 Regla: omitir subsección si no llega a 2 noticias. Total: mínimo 8, máximo 12.
 
 SECCIÓN 2 — AGENDA DE EVENTOS
-Usa noticias_buscadas y emails_gmail para encontrar eventos. Los emails son fuente prioritaria.
+Fuente primaria: agenda_telegram (eventos que Carlos ha curado manualmente, ya formateados, inclúyelos todos).
+Fuente secundaria: noticias_buscadas y emails_gmail para completar si hay pocos eventos.
 Eventos en los próximos 30-40 días. Solo fuera de Madrid y Barcelona.
 Formato: 📅 [Fecha] — [Nombre evento], [Ciudad]. [Una línea de descripción]. [[Web](URL)]
 
 SECCIÓN 3 — CONVOCATORIAS
-Usa noticias_buscadas y emails_gmail para encontrar convocatorias. Los emails son fuente prioritaria.
+Fuente primaria: convocatorias_telegram (convocatorias que Carlos ha curado manualmente, ya formateadas, inclúyelas todas).
+Fuente secundaria: noticias_buscadas y emails_gmail para completar si hay pocas convocatorias.
 Subvenciones, ayudas, incubadoras, aceleradoras, premios. Preferencia fuera de Madrid y Cataluña. Nacionales sí.
 Incluir siempre: qué es y para quién + dotación + fecha límite + enlace.
 Formato: descripción + [[web oficial](URL)].
@@ -320,6 +322,8 @@ def _deduplicar(noticias: list, publicadas: dict) -> list:
 
 def _llamar_claude(
     noticias_bot: list,
+    agenda_bot: list,
+    convocatorias_bot: list,
     noticias_brave: list,
     cracks_texto: str,
     emails_gmail: list,
@@ -328,6 +332,8 @@ def _llamar_claude(
     payload = {
         "fecha_semana": datetime.now().strftime("%Y-%m-%d"),
         "noticias_telegram": [n["texto"] for n in noticias_bot],
+        "agenda_telegram": [n["texto"] for n in agenda_bot],
+        "convocatorias_telegram": [n["texto"] for n in convocatorias_bot],
         "noticias_buscadas": [
             {"titulo": n["titulo"], "url": n["url"], "descripcion": n["descripcion"]}
             for n in noticias_brave[:50]
@@ -408,8 +414,11 @@ async def run():
     chat_id = os.environ["TELEGRAM_CHAT_ID"]
     brave_key = os.environ.get("BRAVE_API_KEY", "")
 
-    # Paso 1a: noticias del bot
-    noticias_bot = _cargar_json(NOTICIAS_FILE, [])
+    # Paso 1a: entradas curadas desde el bot, separadas por tipo
+    todas = _cargar_json(NOTICIAS_FILE, [])
+    noticias_bot      = [n for n in todas if n.get("tipo", "noticia") == "noticia"]
+    agenda_bot        = [n for n in todas if n.get("tipo") == "agenda"]
+    convocatorias_bot = [n for n in todas if n.get("tipo") == "convocatoria"]
 
     # Paso 1b: histórico de URLs publicadas
     publicadas = _cargar_json(PUBLICADAS_FILE, {"urls": [], "titulos": []})
@@ -428,12 +437,15 @@ async def run():
     # Paso 1e: alertas de Gmail
     emails_gmail = await leer_gmail_alerts()
 
-    # Paso 1f: deduplicar contra histórico
+    # Paso 1f: deduplicar Brave contra histórico
     noticias_brave = _deduplicar(noticias_brave, publicadas)
 
     # Paso 2: generar con Claude
     try:
-        output = _llamar_claude(noticias_bot, noticias_brave, cracks_texto, emails_gmail)
+        output = _llamar_claude(
+            noticias_bot, agenda_bot, convocatorias_bot,
+            noticias_brave, cracks_texto, emails_gmail
+        )
     except Exception as e:
         async with httpx.AsyncClient() as client:
             await client.post(

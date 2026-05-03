@@ -12,19 +12,29 @@ from generator import run as run_generator
 
 NOTICIAS_FILE = "noticias.json"
 URL_RE = re.compile(r'https?://\S+')
-SYSTEM_PROMPT = (
-    "Eres un editor de newsletter especializado en startups e inversión. Tu única tarea es convertir noticias en resúmenes breves, precisos y publicables para la newsletter UpAndalus.\n"
-    "Reglas fijas:\n\n"
-    "Resume SOLO el contenido que te llega. No añadas contexto externo.\n"
-    "Detecta el tipo de noticia y extrae lo nuclear: inversión (empresa + cantidad + inversores + uso del dinero), ayuda pública (importe + objetivo + destinatarios + plazos), corporativa (qué hace la empresa + movimiento relevante)\n"
-    "Escribe un único párrafo de 3-4 líneas. Máxima densidad informativa.\n"
-    "Estructura: sujeto + acción principal + cifra o condición clave + finalidad o consecuencia\n"
-    "Usa negritas para resaltar nombre de empresa, cifras e inversores principales\n"
-    "Cifras económicas siempre abreviadas: 450k, 20M€\n"
-    "Cierra con el medio enlazado en este formato exacto: [Nombre del medio]\n"
-    "Tono periodístico: directo, informativo, profesional. Sin adornos.\n"
-    "No inventes ni interpretes más allá del texto"
+
+PROMPT_NOTICIA = (
+    "Eres un editor de newsletter especializado en startups e inversión. "
+    "Convierte la noticia en un resumen breve, preciso y publicable.\n\n"
+    "Escribe un único párrafo de 3-4 líneas. "
+    "Estructura: sujeto + acción principal + cifra o condición clave + finalidad. "
+    "Negritas para nombre de empresa, cifras e inversores. Cifras: 450k, 20M€. "
+    "Cierra con el medio enlazado: [[Nombre del medio]](url). "
+    "Tono periodístico, directo. No inventes nada."
 )
+
+PROMPT_AGENDA = (
+    "Extrae la información de este evento y devuelve SOLO esto, en una línea:\n"
+    "**[Nombre del evento]**. [Fecha/s]. [Ciudad]. [Una línea de descripción]. [[Más info]](URL)\n\n"
+    "Sustituye URL por el enlace real. Si no encuentras algún dato, omítelo. No inventes nada."
+)
+
+PROMPT_CONVOCATORIA = (
+    "Extrae la información de esta convocatoria y devuelve SOLO esto, en una línea:\n"
+    "**[Nombre de la convocatoria]**. Cierra: [Fecha límite]. [Para quién es y qué ofrece, una línea]. [[Más info]](URL)\n\n"
+    "Sustituye URL por el enlace real. Si no encuentras algún dato, omítelo. No inventes nada."
+)
+
 
 def cargar_noticias():
     if not os.path.exists(NOTICIAS_FILE):
@@ -32,84 +42,222 @@ def cargar_noticias():
     with open(NOTICIAS_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 
+
 def guardar_noticias(noticias):
     with open(NOTICIAS_FILE, "w", encoding="utf-8") as f:
         json.dump(noticias, f, ensure_ascii=False, indent=2)
+
 
 def inicio_de_semana():
     hoy = datetime.now()
     lunes = hoy - timedelta(days=hoy.weekday())
     return lunes.replace(hour=0, minute=0, second=0, microsecond=0)
 
+
 def noticias_esta_semana(noticias):
     desde = inicio_de_semana()
     return [n for n in noticias if datetime.fromisoformat(n["fecha"]) >= desde]
 
-async def resumir_con_claude(contenido: str) -> str:
+
+def _contar_por_tipo(noticias, tipo):
+    return len([n for n in noticias_esta_semana(noticias) if n.get("tipo", "noticia") == tipo])
+
+
+async def _claude(contenido: str, system: str) -> str:
     ai = anthropic.AsyncAnthropic()
     msg = await ai.messages.create(
         model="claude-sonnet-4-5",
-        max_tokens=1024,
-        system=SYSTEM_PROMPT,
+        max_tokens=512,
+        system=system,
         messages=[{"role": "user", "content": contenido}],
     )
     return msg.content[0].text
 
 
-async def fetch_url(url: str) -> str:
+async def _fetch(url: str) -> str:
     async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
         resp = await client.get(url)
         resp.raise_for_status()
         return resp.text[:15000]
 
 
-async def guardar_noticia(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    texto = update.message.text
+async def _guardar_entrada(update, texto: str, tipo: str, confirmacion: str):
     noticias = cargar_noticias()
+    noticias.append({"texto": texto, "fecha": datetime.now().isoformat(), "tipo": tipo})
+    guardar_noticias(noticias)
+    total = _contar_por_tipo(noticias, tipo)
+    await update.message.reply_text(f"{confirmacion} ({total} esta semana)\n\n{texto}")
 
-    match = URL_RE.search(texto)
+
+# ── /noticia ──────────────────────────────────────────────────────────────────
+
+async def cmd_noticia(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    args_text = " ".join(context.args).strip() if context.args else ""
+    if not args_text:
+        await update.message.reply_text(
+            "Uso:\n"
+            "`/noticia https://link.com` — intento leerlo y resumirlo\n"
+            "`/noticia texto de la noticia` — lo proceso directamente",
+            parse_mode="Markdown"
+        )
+        return
+
+    match = URL_RE.search(args_text)
+
     if match:
         url = match.group()
-        texto_sin_url = texto.replace(url, "").strip()
+        texto_extra = args_text.replace(url, "").strip()
 
-        if texto_sin_url:
-            # URL + texto: usa el texto como contenido para Claude
-            try:
-                texto_a_guardar = await resumir_con_claude(texto_sin_url)
-            except Exception as e:
-                noticias.append({"texto": texto_sin_url, "fecha": datetime.now().isoformat()})
-                guardar_noticias(noticias)
-                await update.message.reply_text(f"⚠️ No pude generar el resumen, guardé el texto directamente. Error: {e}")
-                return
+        if texto_extra:
+            contenido = texto_extra
         else:
-            # Solo URL: intenta fetch
             try:
-                contenido = await fetch_url(url)
-                texto_a_guardar = await resumir_con_claude(contenido)
+                contenido = await _fetch(url)
             except Exception:
+                # No puede acceder: guarda el link y pide texto
+                noticias = cargar_noticias()
+                noticias.append({"texto": url, "url": url, "fecha": datetime.now().isoformat(), "tipo": "noticia"})
+                guardar_noticias(noticias)
                 await update.message.reply_text(
-                    "🔗 No puedo leer ese medio directamente. Pega el texto de la noticia junto a la URL y lo proceso."
+                    f"🔗 No pude acceder al medio. Guardé el link.\n"
+                    f"Si tienes el texto, mándamelo así:\n`/noticia [pega aquí el texto]`",
+                    parse_mode="Markdown"
                 )
                 return
-    else:
-        texto_a_guardar = texto
 
-    noticias.append({"texto": texto_a_guardar, "fecha": datetime.now().isoformat()})
-    guardar_noticias(noticias)
-    total = len(noticias_esta_semana(noticias))
-    await update.message.reply_text(f"✅ Guardado. Ya tengo {total} noticias esta semana.")
+        try:
+            texto_final = await _claude(f"{contenido}\n\nFuente: {url}", PROMPT_NOTICIA)
+        except Exception as e:
+            texto_final = args_text
+            await update.message.reply_text(f"⚠️ Claude falló, guardé el texto sin procesar. Error: {e}")
+
+        await _guardar_entrada(update, texto_final, "noticia", "✅ Noticia guardada.")
+    else:
+        # Solo texto sin URL
+        try:
+            texto_final = await _claude(args_text, PROMPT_NOTICIA)
+        except Exception:
+            texto_final = args_text
+        await _guardar_entrada(update, texto_final, "noticia", "✅ Noticia guardada.")
+
+
+# ── /agenda ───────────────────────────────────────────────────────────────────
+
+async def cmd_agenda(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    args_text = " ".join(context.args).strip() if context.args else ""
+    if not args_text:
+        await update.message.reply_text(
+            "Uso:\n"
+            "`/agenda https://link.com` — extraigo los datos del evento\n"
+            "`/agenda Nombre. Fecha. Ciudad. Descripción.` — lo formato directamente",
+            parse_mode="Markdown"
+        )
+        return
+
+    match = URL_RE.search(args_text)
+
+    if match:
+        url = match.group()
+        texto_extra = args_text.replace(url, "").strip()
+        contenido = texto_extra if texto_extra else None
+
+        if not contenido:
+            try:
+                contenido = await _fetch(url)
+            except Exception:
+                await update.message.reply_text(
+                    "🔗 No pude acceder al link. Mándame los datos así:\n"
+                    "`/agenda Nombre evento. Fechas. Ciudad. Descripción breve.`",
+                    parse_mode="Markdown"
+                )
+                return
+
+        try:
+            texto_final = await _claude(f"{contenido}\n\nURL: {url}", PROMPT_AGENDA)
+        except Exception:
+            texto_final = args_text
+    else:
+        try:
+            texto_final = await _claude(args_text, PROMPT_AGENDA)
+        except Exception:
+            texto_final = args_text
+
+    await _guardar_entrada(update, texto_final, "agenda", "📅 Evento guardado.")
+
+
+# ── /convocatoria ─────────────────────────────────────────────────────────────
+
+async def cmd_convocatoria(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    args_text = " ".join(context.args).strip() if context.args else ""
+    if not args_text:
+        await update.message.reply_text(
+            "Uso:\n"
+            "`/convocatoria https://link.com` — extraigo los datos\n"
+            "`/convocatoria Nombre. Fecha límite. Descripción.` — lo formato directamente",
+            parse_mode="Markdown"
+        )
+        return
+
+    match = URL_RE.search(args_text)
+
+    if match:
+        url = match.group()
+        texto_extra = args_text.replace(url, "").strip()
+        contenido = texto_extra if texto_extra else None
+
+        if not contenido:
+            try:
+                contenido = await _fetch(url)
+            except Exception:
+                await update.message.reply_text(
+                    "🔗 No pude acceder al link. Mándame los datos así:\n"
+                    "`/convocatoria Nombre. Fecha límite. Para quién. Qué ofrece.`",
+                    parse_mode="Markdown"
+                )
+                return
+
+        try:
+            texto_final = await _claude(f"{contenido}\n\nURL: {url}", PROMPT_CONVOCATORIA)
+        except Exception:
+            texto_final = args_text
+    else:
+        try:
+            texto_final = await _claude(args_text, PROMPT_CONVOCATORIA)
+        except Exception:
+            texto_final = args_text
+
+    await _guardar_entrada(update, texto_final, "convocatoria", "🎯 Convocatoria guardada.")
+
+
+# ── Otros comandos ────────────────────────────────────────────────────────────
 
 async def resumen(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    noticias = noticias_esta_semana(cargar_noticias())
-    if not noticias:
-        await update.message.reply_text("No hay noticias guardadas esta semana.")
+    todas = noticias_esta_semana(cargar_noticias())
+    if not todas:
+        await update.message.reply_text("No hay nada guardado esta semana.")
         return
-    lineas = [f"{i}. [{datetime.fromisoformat(n['fecha']).strftime('%d/%m %H:%M')}] {n['texto']}" for i, n in enumerate(noticias, 1)]
-    await update.message.reply_text("🔍 Debug: versión actual cargada correctamente\n\n📋 *Noticias de esta semana:*\n\n" + "\n\n".join(lineas), parse_mode="Markdown")
+
+    secciones = []
+    for tipo, emoji, label in [
+        ("noticia", "📰", "NOTICIAS"),
+        ("agenda", "📅", "AGENDA"),
+        ("convocatoria", "🎯", "CONVOCATORIAS"),
+    ]:
+        items = [n for n in todas if n.get("tipo", "noticia") == tipo]
+        if items:
+            lineas = [
+                f"{i}. [{datetime.fromisoformat(n['fecha']).strftime('%d/%m %H:%M')}] {n['texto'][:120]}"
+                for i, n in enumerate(items, 1)
+            ]
+            secciones.append(f"{emoji} *{label}* ({len(items)})\n" + "\n".join(lineas))
+
+    await update.message.reply_text("\n\n".join(secciones), parse_mode="Markdown")
+
 
 async def limpiar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     guardar_noticias([])
     await update.message.reply_text("🗑️ Lista limpiada. Nueva semana.")
+
 
 async def digest(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⏳ Procesando digest...")
@@ -118,9 +266,6 @@ async def digest(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ Error: {e}")
 
-async def on_startup(app):
-    scheduler = configurar_scheduler(app)
-    scheduler.start()
 
 async def generar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⏳ Generando contenido... Esto puede tardar un minuto.")
@@ -130,15 +275,26 @@ async def generar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Error: {e}")
 
 
+async def on_startup(app):
+    scheduler = configurar_scheduler(app)
+    scheduler.start()
+
+
+# ── main ──────────────────────────────────────────────────────────────────────
+
 def main():
     token = os.environ["TELEGRAM_TOKEN"]
     app = ApplicationBuilder().token(token).post_init(on_startup).build()
+
+    app.add_handler(CommandHandler("noticia", cmd_noticia))
+    app.add_handler(CommandHandler("agenda", cmd_agenda))
+    app.add_handler(CommandHandler("convocatoria", cmd_convocatoria))
     app.add_handler(CommandHandler("resumen", resumen))
     app.add_handler(CommandHandler("limpiar", limpiar))
     app.add_handler(CommandHandler("digest", digest))
     app.add_handler(CommandHandler("generar", generar))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, guardar_noticia))
-    print("Bot v2 iniciado.")
+
+    print("Bot v3 iniciado.")
 
     port = int(os.environ.get("PORT", 8080))
     railway_url = os.environ["RAILWAY_STATIC_URL"]
@@ -150,6 +306,7 @@ def main():
         webhook_url=f"https://{railway_url}/webhook",
         drop_pending_updates=True,
     )
+
 
 if __name__ == "__main__":
     main()
